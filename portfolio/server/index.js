@@ -101,11 +101,33 @@ function cleanText(value, max = 500) {
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
 app.post('/api/auth/login', (req, res) => {
-  const password = String(req.body?.password || '')
-  if (password !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Invalid password' })
-  const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '7d' })
-  res.json({ token })
-})
+  try {
+    const password = String(req.body?.password || '');
+
+    if (password !== ADMIN_PASSWORD) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    const secret = String(
+      process.env.JWT_SECRET || 'sinoo-sf-admin-secret-2026'
+    );
+
+    const token = jwt.sign(
+      { role: 'admin' },
+      secret,
+      { expiresIn: '7d' }
+    );
+
+    return res.json({ token });
+  } catch (error) {
+    console.error('ADMIN LOGIN ERROR:', error);
+
+    return res.status(500).json({
+      error: 'Login server error',
+      details: error?.message || String(error)
+    });
+  }
+});
 
 app.get('/api/public', async (_req, res) => {
   await db.read()
