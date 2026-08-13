@@ -1,0 +1,56 @@
+{
+  "status": [
+    {
+      "id": "1786565243850-lwy29p",
+      "label": "Available for freelance",
+      "value": "active",
+      "active": true
+    }
+  ],
+  "skills": [
+    {
+      "id": "skill-1",
+      "name": "Web Development"
+    },
+    {
+      "id": "skill-2",
+      "name": "UI/UX Development"
+    },
+    {
+      "id": "skill-3",
+      "name": "Canva"
+    },
+    {
+      "id": "skill-4",
+      "name": "Prompt Engineering"
+    },
+    {
+      "id": "skill-5",
+      "name": "ReactJs / Tailwind"
+    },
+    {
+      "id": "skill-6",
+      "name": "JavaScript"
+    },
+    {
+      "id": "skill-7",
+      "name": "Git"
+    },
+    {
+      "id": "skill-8",
+      "name": "SEO Basics"
+    }
+  ],
+  "projects": [],
+  "messages": [
+    {
+      "id": "1786564668838-ec0awy",
+      "name": "77j7",
+      "number": "7jj7",
+      "project": "j77j",
+      "source": "footer",
+      "read": false,
+      "createdAt": "2026-08-12T19:57:48.838Z"
+    }
+  ]
+}

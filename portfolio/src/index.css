@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-ink text-bone font-sans antialiased;
+}
+
+/* Respect users who've asked for less motion on their OS */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Visible keyboard focus everywhere, since we override a lot of default outlines */
+:focus-visible {
+  outline: 2px solid #d81c2f;
+  outline-offset: 3px;
+}
