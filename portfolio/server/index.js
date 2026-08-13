@@ -29,21 +29,18 @@ const adminDir = path.join(rootDir, 'admin')
 
 const PORT = Number(process.env.PORT || 4000)
 
-const ADMIN_PASSWORD = String(
-  process.env.ADMIN_PASSWORD || 'G6dnC'
-)
-
-const JWT_SECRET = String(
-  process.env.JWT_SECRET || 'sinoo-sf-admin-secret-2026'
-)
+// No Render environment variables required.
+const ADMIN_PASSWORD = 'G6dnC'
+const JWT_SECRET = 'sinoo-sf-admin-secret-2026'
 
 const FRONTEND_ORIGIN =
   process.env.FRONTEND_ORIGIN || '*'
 
 // =====================================================
-// CREATE STORAGE DIRECTORIES
+// STORAGE
 // =====================================================
 
+fs.mkdirSync(storageDir, { recursive: true })
 fs.mkdirSync(uploadsDir, { recursive: true })
 
 // =====================================================
@@ -159,6 +156,7 @@ const allowedOrigins =
 app.use(
   cors({
     origin: (origin, callback) => {
+
       if (
         !origin ||
         !allowedOrigins ||
@@ -177,7 +175,7 @@ app.use(
 )
 
 // =====================================================
-// MIDDLEWARE
+// BODY PARSER
 // =====================================================
 
 app.use(
@@ -185,6 +183,10 @@ app.use(
     limit: '2mb'
   })
 )
+
+// =====================================================
+// STATIC FILES
+// =====================================================
 
 app.use(
   '/uploads',
@@ -197,7 +199,7 @@ app.use(
 )
 
 // =====================================================
-// MULTER UPLOAD
+// MULTER
 // =====================================================
 
 const storage = multer.diskStorage({
@@ -242,10 +244,11 @@ const upload = multer({
       'image/gif'
     ]
 
-    cb(
-      null,
-      allowed.includes(file.mimetype)
-    )
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true)
+    } else {
+      cb(new Error('Only image files are allowed'))
+    }
   }
 })
 
@@ -255,15 +258,14 @@ const upload = multer({
 
 function auth(req, res, next) {
 
-  const authHeader =
+  const header =
     req.headers.authorization || ''
 
-  const token = authHeader.replace(
-    /^Bearer\s+/i,
-    ''
-  )
+  const token =
+    header.replace(/^Bearer\s+/i, '').trim()
 
   if (!token) {
+
     return res.status(401).json({
       error: 'Authentication required'
     })
@@ -271,12 +273,11 @@ function auth(req, res, next) {
 
   try {
 
-    const decoded = jwt.verify(
-      token,
-      JWT_SECRET
-    )
+    const decoded =
+      jwt.verify(token, JWT_SECRET)
 
     if (decoded?.role !== 'admin') {
+
       return res.status(401).json({
         error: 'Invalid administrator token'
       })
@@ -310,10 +311,7 @@ function id() {
     .slice(2, 8)}`
 }
 
-function cleanText(
-  value,
-  max = 500
-) {
+function cleanText(value, max = 500) {
 
   return String(value ?? '')
     .trim()
@@ -321,14 +319,14 @@ function cleanText(
 }
 
 // =====================================================
-// HEALTH CHECK
+// HEALTH
 // =====================================================
 
 app.get(
   '/api/health',
   (_req, res) => {
 
-    res.json({
+    res.status(200).json({
       ok: true,
       service: 'sinoo-sf-api'
     })
@@ -343,20 +341,24 @@ app.post(
   '/api/auth/login',
   (req, res) => {
 
+    console.log(
+      'LOGIN REQUEST RECEIVED'
+    )
+
     try {
 
-      const password = String(
-        req.body?.password || ''
-      )
+      const password =
+        String(req.body?.password || '')
 
       console.log(
-        'Admin login attempt received'
+        'Password received:',
+        password ? 'YES' : 'NO'
       )
 
       if (password !== ADMIN_PASSWORD) {
 
         console.log(
-          'Admin login rejected: invalid password'
+          'LOGIN FAILED: INVALID PASSWORD'
         )
 
         return res.status(401).json({
@@ -364,18 +366,19 @@ app.post(
         })
       }
 
-      const token = jwt.sign(
-        {
-          role: 'admin'
-        },
-        JWT_SECRET,
-        {
-          expiresIn: '7d'
-        }
-      )
+      const token =
+        jwt.sign(
+          {
+            role: 'admin'
+          },
+          JWT_SECRET,
+          {
+            expiresIn: '7d'
+          }
+        )
 
       console.log(
-        'Admin login successful'
+        'LOGIN SUCCESS'
       )
 
       return res.status(200).json({
@@ -385,14 +388,15 @@ app.post(
     } catch (error) {
 
       console.error(
-        'ADMIN LOGIN ERROR:',
+        'LOGIN ERROR:',
         error
       )
 
       return res.status(500).json({
-        error:
+        error: 'Login server error',
+        details:
           error?.message ||
-          'Login server error'
+          String(error)
       })
     }
   }
@@ -410,7 +414,7 @@ app.get(
 
       await db.read()
 
-      res.json({
+      return res.json({
 
         status:
           db.data.status.filter(
@@ -435,8 +439,9 @@ app.get(
         error
       )
 
-      res.status(500).json({
-        error: 'Failed to load public content'
+      return res.status(500).json({
+        error:
+          'Failed to load public content'
       })
     }
   }
@@ -452,27 +457,35 @@ app.post(
 
     try {
 
-      const name = cleanText(
-        req.body?.name,
-        100
-      )
+      const name =
+        cleanText(
+          req.body?.name,
+          100
+        )
 
-      const number = cleanText(
-        req.body?.number,
-        80
-      )
+      const number =
+        cleanText(
+          req.body?.number,
+          80
+        )
 
-      const project = cleanText(
-        req.body?.project,
-        3000
-      )
+      const project =
+        cleanText(
+          req.body?.project,
+          3000
+        )
 
-      const source = cleanText(
-        req.body?.source || 'contact',
-        30
-      )
+      const source =
+        cleanText(
+          req.body?.source || 'contact',
+          30
+        )
 
-      if (!name || !number || !project) {
+      if (
+        !name ||
+        !number ||
+        !project
+      ) {
 
         return res.status(400).json({
           error:
@@ -509,7 +522,7 @@ app.post(
 
       await db.write()
 
-      res.status(201).json({
+      return res.status(201).json({
 
         ok: true,
 
@@ -525,8 +538,9 @@ app.post(
         error
       )
 
-      res.status(500).json({
-        error: 'Failed to save message'
+      return res.status(500).json({
+        error:
+          'Failed to save message'
       })
     }
   }
@@ -558,16 +572,18 @@ app.post(
 
       id: id(),
 
-      label: cleanText(
-        req.body?.label,
-        120
-      ),
+      label:
+        cleanText(
+          req.body?.label,
+          120
+        ),
 
-      value: cleanText(
-        req.body?.value ||
-        req.body?.label,
-        120
-      ),
+      value:
+        cleanText(
+          req.body?.value ||
+          req.body?.label,
+          120
+        ),
 
       active:
         req.body?.active !== false
@@ -582,15 +598,11 @@ app.post(
 
     await db.read()
 
-    db.data.status.push(
-      item
-    )
+    db.data.status.push(item)
 
     await db.write()
 
-    res.status(201).json(
-      item
-    )
+    res.status(201).json(item)
   }
 )
 
@@ -618,20 +630,22 @@ app.put(
       req.body.label !== undefined
     ) {
 
-      item.label = cleanText(
-        req.body.label,
-        120
-      )
+      item.label =
+        cleanText(
+          req.body.label,
+          120
+        )
     }
 
     if (
       req.body.value !== undefined
     ) {
 
-      item.value = cleanText(
-        req.body.value,
-        120
-      )
+      item.value =
+        cleanText(
+          req.body.value,
+          120
+        )
     }
 
     if (
@@ -689,10 +703,11 @@ app.post(
   auth,
   async (req, res) => {
 
-    const name = cleanText(
-      req.body?.name,
-      100
-    )
+    const name =
+      cleanText(
+        req.body?.name,
+        100
+      )
 
     if (!name) {
 
@@ -708,15 +723,11 @@ app.post(
 
     await db.read()
 
-    db.data.skills.push(
-      item
-    )
+    db.data.skills.push(item)
 
     await db.write()
 
-    res.status(201).json(
-      item
-    )
+    res.status(201).json(item)
   }
 )
 
@@ -740,10 +751,11 @@ app.put(
       })
     }
 
-    item.name = cleanText(
-      req.body?.name,
-      100
-    )
+    item.name =
+      cleanText(
+        req.body?.name,
+        100
+      )
 
     await db.write()
 
@@ -797,72 +809,93 @@ app.post(
   upload.single('image'),
   async (req, res) => {
 
-    const item = {
+    try {
 
-      id: id(),
+      const item = {
 
-      name: cleanText(
-        req.body?.name,
-        150
-      ),
+        id: id(),
 
-      tag: cleanText(
-        req.body?.tag,
-        120
-      ),
+        name:
+          cleanText(
+            req.body?.name,
+            150
+          ),
 
-      image:
-        req.file
-          ? `/uploads/${req.file.filename}`
-          : cleanText(
-              req.body?.image,
-              500
-            ),
+        tag:
+          cleanText(
+            req.body?.tag,
+            120
+          ),
 
-      url: cleanText(
-        req.body?.url,
-        1000
-      ),
+        image:
+          req.file
+            ? `/uploads/${req.file.filename}`
+            : cleanText(
+                req.body?.image,
+                500
+              ),
 
-      number:
-        cleanText(
-          req.body?.number,
-          10
-        ) ||
-        String(
-          (db.data.projects?.length || 0) +
-          1
-        )
-    }
+        url:
+          cleanText(
+            req.body?.url,
+            1000
+          ),
 
-    if (
-      !item.name ||
-      !item.image
-    ) {
-
-      if (req.file) {
-        fs.unlinkSync(
-          req.file.path
-        )
+        number:
+          cleanText(
+            req.body?.number,
+            10
+          ) ||
+          String(
+            (db.data.projects?.length || 0) +
+            1
+          )
       }
 
-      return res.status(400).json({
+      if (
+        !item.name ||
+        !item.image
+      ) {
+
+        if (req.file) {
+          fs.unlinkSync(
+            req.file.path
+          )
+        }
+
+        return res.status(400).json({
+          error:
+            'Name and image are required'
+        })
+      }
+
+      await db.read()
+
+      db.data.projects.push(item)
+
+      await db.write()
+
+      return res.status(201).json(item)
+
+    } catch (error) {
+
+      console.error(
+        'CREATE PROJECT ERROR:',
+        error
+      )
+
+      if (req.file) {
+        try {
+          fs.unlinkSync(req.file.path)
+        } catch {}
+      }
+
+      return res.status(500).json({
         error:
-          'Name and image are required'
+          error?.message ||
+          'Failed to create project'
       })
     }
-
-    await db.read()
-
-    db.data.projects.push(
-      item
-    )
-
-    await db.write()
-
-    res.status(201).json(
-      item
-    )
   }
 )
 
@@ -872,113 +905,132 @@ app.put(
   upload.single('image'),
   async (req, res) => {
 
-    await db.read()
+    try {
 
-    const item =
-      db.data.projects.find(
-        x =>
-          x.id === req.params.id
-      )
+      await db.read()
 
-    if (!item) {
-
-      if (req.file) {
-        fs.unlinkSync(
-          req.file.path
+      const item =
+        db.data.projects.find(
+          x =>
+            x.id === req.params.id
         )
+
+      if (!item) {
+
+        if (req.file) {
+          fs.unlinkSync(
+            req.file.path
+          )
+        }
+
+        return res.status(404).json({
+          error:
+            'Project not found'
+        })
       }
 
-      return res.status(404).json({
-        error: 'Project not found'
-      })
-    }
-
-    const oldImage =
-      item.image
-
-    if (
-      req.body.name !== undefined
-    ) {
-
-      item.name = cleanText(
-        req.body.name,
-        150
-      )
-    }
-
-    if (
-      req.body.tag !== undefined
-    ) {
-
-      item.tag = cleanText(
-        req.body.tag,
-        120
-      )
-    }
-
-    if (
-      req.body.url !== undefined
-    ) {
-
-      item.url = cleanText(
-        req.body.url,
-        1000
-      )
-    }
-
-    if (
-      req.body.number !== undefined
-    ) {
-
-      item.number = cleanText(
-        req.body.number,
-        10
-      )
-    }
-
-    if (req.file) {
-
-      item.image =
-        `/uploads/${req.file.filename}`
-    }
-
-    if (
-      !item.name ||
-      !item.image
-    ) {
-
-      return res.status(400).json({
-        error:
-          'Name and image are required'
-      })
-    }
-
-    await db.write()
-
-    if (
-      req.file &&
-      oldImage?.startsWith(
-        '/uploads/'
-      )
-    ) {
-
-      const oldPath =
-        path.join(
-          uploadsDir,
-          path.basename(oldImage)
-        )
+      const oldImage =
+        item.image
 
       if (
-        fs.existsSync(oldPath)
+        req.body.name !== undefined
       ) {
 
-        fs.unlinkSync(
-          oldPath
-        )
+        item.name =
+          cleanText(
+            req.body.name,
+            150
+          )
       }
-    }
 
-    res.json(item)
+      if (
+        req.body.tag !== undefined
+      ) {
+
+        item.tag =
+          cleanText(
+            req.body.tag,
+            120
+          )
+      }
+
+      if (
+        req.body.url !== undefined
+      ) {
+
+        item.url =
+          cleanText(
+            req.body.url,
+            1000
+          )
+      }
+
+      if (
+        req.body.number !== undefined
+      ) {
+
+        item.number =
+          cleanText(
+            req.body.number,
+            10
+          )
+      }
+
+      if (req.file) {
+
+        item.image =
+          `/uploads/${req.file.filename}`
+      }
+
+      if (
+        !item.name ||
+        !item.image
+      ) {
+
+        return res.status(400).json({
+          error:
+            'Name and image are required'
+        })
+      }
+
+      await db.write()
+
+      if (
+        req.file &&
+        oldImage?.startsWith(
+          '/uploads/'
+        )
+      ) {
+
+        const oldPath =
+          path.join(
+            uploadsDir,
+            path.basename(oldImage)
+          )
+
+        if (
+          fs.existsSync(oldPath)
+        ) {
+
+          fs.unlinkSync(oldPath)
+        }
+      }
+
+      return res.json(item)
+
+    } catch (error) {
+
+      console.error(
+        'UPDATE PROJECT ERROR:',
+        error
+      )
+
+      return res.status(500).json({
+        error:
+          error?.message ||
+          'Failed to update project'
+      })
+    }
   }
 )
 
@@ -998,7 +1050,8 @@ app.delete(
     if (!item) {
 
       return res.status(404).json({
-        error: 'Project not found'
+        error:
+          'Project not found'
       })
     }
 
@@ -1037,7 +1090,7 @@ app.delete(
 )
 
 // =====================================================
-// MESSAGES - ADMIN
+// ADMIN MESSAGES
 // =====================================================
 
 app.get(
@@ -1069,7 +1122,8 @@ app.put(
     if (!item) {
 
       return res.status(404).json({
-        error: 'Message not found'
+        error:
+          'Message not found'
       })
     }
 
@@ -1131,7 +1185,27 @@ app.use(
 )
 
 // =====================================================
-// START SERVER
+// ERROR HANDLER
+// =====================================================
+
+app.use(
+  (error, _req, res, _next) => {
+
+    console.error(
+      'SERVER ERROR:',
+      error
+    )
+
+    res.status(500).json({
+      error:
+        error?.message ||
+        'Internal server error'
+    })
+  }
+)
+
+// =====================================================
+// START
 // =====================================================
 
 app.listen(
@@ -1147,7 +1221,7 @@ app.listen(
     )
 
     console.log(
-      `JWT authentication enabled`
+      `Health check: /api/health`
     )
   }
 )
