@@ -18,6 +18,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const rootDir = path.resolve(__dirname, '..')
+
 const storageDir = path.join(rootDir, 'storage')
 const uploadsDir = path.join(storageDir, 'uploads')
 const dbPath = path.join(storageDir, 'db.json')
@@ -27,50 +28,16 @@ const adminDir = path.join(rootDir, 'admin')
 // CONFIG
 // =====================================================
 
+// Render provides PORT automatically.
+// Locally it will use 4000.
 const PORT = Number(process.env.PORT || 4000)
 
-// No Render environment variables required.
+// No environment variables are required.
 const ADMIN_PASSWORD = 'G6dnC'
 const JWT_SECRET = 'sinoo-sf-admin-secret-2026'
 
 // =====================================================
-// CORS
-// =====================================================
-
-const allowedOrigins = [
-  'https://sinoosf.onrender.com',
-  'https://sinoosf-api.onrender.com',
-  'http://localhost:5173',
-  'http://localhost:3000'
-]
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-
-      // Allow requests without an Origin header
-      // such as direct API requests/server tools.
-      if (!origin) {
-        return callback(null, true)
-      }
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true)
-      }
-
-      console.log('CORS BLOCKED:', origin)
-
-      // Don't throw an error here.
-      // Simply reject the origin.
-      return callback(null, false)
-    },
-
-    credentials: true
-  })
-)
-
-// =====================================================
-// STORAGE
+// CREATE DIRECTORIES
 // =====================================================
 
 fs.mkdirSync(storageDir, { recursive: true })
@@ -178,32 +145,33 @@ app.set('trust proxy', 1)
 // =====================================================
 // CORS
 // =====================================================
-
-const allowedOrigins =
-  FRONTEND_ORIGIN === '*'
-    ? null
-    : FRONTEND_ORIGIN
-        .split(',')
-        .map(s => s.trim())
+//
+// IMPORTANT:
+//
+// The frontend and backend are on different Render URLs.
+// We are intentionally allowing browser requests from any
+// origin because authentication uses a JWT Authorization
+// header, NOT cookies.
+//
+// This avoids the CORS origin problems you were getting.
+//
+// =====================================================
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-
-      if (
-        !origin ||
-        !allowedOrigins ||
-        allowedOrigins.includes(origin)
-      ) {
-        return callback(null, true)
-      }
-
-      return callback(
-        new Error('CORS origin not allowed')
-      )
-    },
-
-    credentials: true
+    origin: true,
+    credentials: false,
+    methods: [
+      'GET',
+      'POST',
+      'PUT',
+      'DELETE',
+      'OPTIONS'
+    ],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization'
+    ]
   })
 )
 
@@ -232,10 +200,10 @@ app.use(
 )
 
 // =====================================================
-// MULTER
+// MULTER UPLOAD
 // =====================================================
 
-const storage = multer.diskStorage({
+const uploadStorage = multer.diskStorage({
 
   destination: (_req, _file, cb) => {
     cb(null, uploadsDir)
@@ -262,7 +230,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
 
-  storage,
+  storage: uploadStorage,
 
   limits: {
     fileSize: 8 * 1024 * 1024
@@ -280,7 +248,11 @@ const upload = multer({
     if (allowed.includes(file.mimetype)) {
       cb(null, true)
     } else {
-      cb(new Error('Only image files are allowed'))
+      cb(
+        new Error(
+          'Only JPG, PNG, WEBP and GIF images are allowed'
+        )
+      )
     }
   }
 })
@@ -295,7 +267,9 @@ function auth(req, res, next) {
     req.headers.authorization || ''
 
   const token =
-    header.replace(/^Bearer\s+/i, '').trim()
+    header
+      .replace(/^Bearer\s+/i, '')
+      .trim()
 
   if (!token) {
 
@@ -307,9 +281,15 @@ function auth(req, res, next) {
   try {
 
     const decoded =
-      jwt.verify(token, JWT_SECRET)
+      jwt.verify(
+        token,
+        JWT_SECRET
+      )
 
-    if (decoded?.role !== 'admin') {
+    if (
+      !decoded ||
+      decoded.role !== 'admin'
+    ) {
 
       return res.status(401).json({
         error: 'Invalid administrator token'
@@ -344,7 +324,10 @@ function id() {
     .slice(2, 8)}`
 }
 
-function cleanText(value, max = 500) {
+function cleanText(
+  value,
+  max = 500
+) {
 
   return String(value ?? '')
     .trim()
@@ -359,7 +342,7 @@ app.get(
   '/api/health',
   (_req, res) => {
 
-    res.status(200).json({
+    return res.status(200).json({
       ok: true,
       service: 'sinoo-sf-api'
     })
@@ -381,14 +364,18 @@ app.post(
     try {
 
       const password =
-        String(req.body?.password || '')
+        String(
+          req.body?.password || ''
+        )
 
       console.log(
         'Password received:',
         password ? 'YES' : 'NO'
       )
 
-      if (password !== ADMIN_PASSWORD) {
+      if (
+        password !== ADMIN_PASSWORD
+      ) {
 
         console.log(
           'LOGIN FAILED: INVALID PASSWORD'
@@ -447,18 +434,32 @@ app.get(
 
       await db.read()
 
-      return res.json({
+      const status =
+        Array.isArray(db.data.status)
+          ? db.data.status
+          : []
+
+      const skills =
+        Array.isArray(db.data.skills)
+          ? db.data.skills
+          : []
+
+      const projects =
+        Array.isArray(db.data.projects)
+          ? db.data.projects
+          : []
+
+      return res.status(200).json({
 
         status:
-          db.data.status.filter(
-            s => s.active
+          status.filter(
+            item => item.active
           ),
 
-        skills:
-          db.data.skills,
+        skills,
 
         projects:
-          [...db.data.projects].sort(
+          [...projects].sort(
             (a, b) =>
               Number(a.number) -
               Number(b.number)
@@ -481,7 +482,7 @@ app.get(
 )
 
 // =====================================================
-// CONTACT MESSAGES
+// CONTACT MESSAGES - PUBLIC
 // =====================================================
 
 app.post(
@@ -510,7 +511,8 @@ app.post(
 
       const source =
         cleanText(
-          req.body?.source || 'contact',
+          req.body?.source ||
+          'contact',
           30
         )
 
@@ -527,6 +529,14 @@ app.post(
       }
 
       await db.read()
+
+      if (
+        !Array.isArray(
+          db.data.messages
+        )
+      ) {
+        db.data.messages = []
+      }
 
       const message = {
 
@@ -588,11 +598,26 @@ app.get(
   auth,
   async (_req, res) => {
 
-    await db.read()
+    try {
 
-    res.json(
-      db.data.status
-    )
+      await db.read()
+
+      return res.json(
+        db.data.status || []
+      )
+
+    } catch (error) {
+
+      console.error(
+        'GET STATUS ERROR:',
+        error
+      )
+
+      return res.status(500).json({
+        error:
+          'Failed to load status'
+      })
+    }
   }
 )
 
@@ -601,41 +626,69 @@ app.post(
   auth,
   async (req, res) => {
 
-    const item = {
+    try {
 
-      id: id(),
-
-      label:
+      const label =
         cleanText(
           req.body?.label,
           120
-        ),
+        )
 
-      value:
+      const value =
         cleanText(
           req.body?.value ||
-          req.body?.label,
+          label,
           120
-        ),
+        )
 
-      active:
+      const active =
         req.body?.active !== false
-    }
 
-    if (!item.label) {
+      if (!label) {
 
-      return res.status(400).json({
-        error: 'Label is required'
+        return res.status(400).json({
+          error:
+            'Label is required'
+        })
+      }
+
+      await db.read()
+
+      if (
+        !Array.isArray(
+          db.data.status
+        )
+      ) {
+        db.data.status = []
+      }
+
+      const item = {
+        id: id(),
+        label,
+        value,
+        active
+      }
+
+      db.data.status.push(item)
+
+      await db.write()
+
+      return res.status(201).json(
+        item
+      )
+
+    } catch (error) {
+
+      console.error(
+        'CREATE STATUS ERROR:',
+        error
+      )
+
+      return res.status(500).json({
+        error:
+          'Failed to create status'
       })
     }
-
-    await db.read()
-
-    db.data.status.push(item)
-
-    await db.write()
-
-    res.status(201).json(item)
   }
 )
 
@@ -644,54 +697,72 @@ app.put(
   auth,
   async (req, res) => {
 
-    await db.read()
+    try {
 
-    const item =
-      db.data.status.find(
-        x =>
-          x.id === req.params.id
+      await db.read()
+
+      const item =
+        db.data.status.find(
+          x =>
+            x.id === req.params.id
+        )
+
+      if (!item) {
+
+        return res.status(404).json({
+          error:
+            'Status not found'
+        })
+      }
+
+      if (
+        req.body.label !== undefined
+      ) {
+
+        item.label =
+          cleanText(
+            req.body.label,
+            120
+          )
+      }
+
+      if (
+        req.body.value !== undefined
+      ) {
+
+        item.value =
+          cleanText(
+            req.body.value,
+            120
+          )
+      }
+
+      if (
+        req.body.active !== undefined
+      ) {
+
+        item.active =
+          Boolean(
+            req.body.active
+          )
+      }
+
+      await db.write()
+
+      return res.json(item)
+
+    } catch (error) {
+
+      console.error(
+        'UPDATE STATUS ERROR:',
+        error
       )
 
-    if (!item) {
-
-      return res.status(404).json({
-        error: 'Status not found'
+      return res.status(500).json({
+        error:
+          'Failed to update status'
       })
     }
-
-    if (
-      req.body.label !== undefined
-    ) {
-
-      item.label =
-        cleanText(
-          req.body.label,
-          120
-        )
-    }
-
-    if (
-      req.body.value !== undefined
-    ) {
-
-      item.value =
-        cleanText(
-          req.body.value,
-          120
-        )
-    }
-
-    if (
-      req.body.active !== undefined
-    ) {
-
-      item.active =
-        Boolean(req.body.active)
-    }
-
-    await db.write()
-
-    res.json(item)
   }
 )
 
@@ -700,17 +771,46 @@ app.delete(
   auth,
   async (req, res) => {
 
-    await db.read()
+    try {
 
-    db.data.status =
-      db.data.status.filter(
-        x =>
-          x.id !== req.params.id
+      await db.read()
+
+      const exists =
+        db.data.status.some(
+          x =>
+            x.id === req.params.id
+        )
+
+      if (!exists) {
+
+        return res.status(404).json({
+          error:
+            'Status not found'
+        })
+      }
+
+      db.data.status =
+        db.data.status.filter(
+          x =>
+            x.id !== req.params.id
+        )
+
+      await db.write()
+
+      return res.status(204).end()
+
+    } catch (error) {
+
+      console.error(
+        'DELETE STATUS ERROR:',
+        error
       )
 
-    await db.write()
-
-    res.status(204).end()
+      return res.status(500).json({
+        error:
+          'Failed to delete status'
+      })
+    }
   }
 )
 
@@ -723,11 +823,26 @@ app.get(
   auth,
   async (_req, res) => {
 
-    await db.read()
+    try {
 
-    res.json(
-      db.data.skills
-    )
+      await db.read()
+
+      return res.json(
+        db.data.skills || []
+      )
+
+    } catch (error) {
+
+      console.error(
+        'GET SKILLS ERROR:',
+        error
+      )
+
+      return res.status(500).json({
+        error:
+          'Failed to load skills'
+      })
+    }
   }
 )
 
@@ -736,31 +851,57 @@ app.post(
   auth,
   async (req, res) => {
 
-    const name =
-      cleanText(
-        req.body?.name,
-        100
+    try {
+
+      const name =
+        cleanText(
+          req.body?.name,
+          100
+        )
+
+      if (!name) {
+
+        return res.status(400).json({
+          error:
+            'Skill name is required'
+        })
+      }
+
+      await db.read()
+
+      if (
+        !Array.isArray(
+          db.data.skills
+        )
+      ) {
+        db.data.skills = []
+      }
+
+      const item = {
+        id: id(),
+        name
+      }
+
+      db.data.skills.push(item)
+
+      await db.write()
+
+      return res.status(201).json(
+        item
       )
 
-    if (!name) {
+    } catch (error) {
 
-      return res.status(400).json({
-        error: 'Skill name is required'
+      console.error(
+        'CREATE SKILL ERROR:',
+        error
+      )
+
+      return res.status(500).json({
+        error:
+          'Failed to create skill'
       })
     }
-
-    const item = {
-      id: id(),
-      name
-    }
-
-    await db.read()
-
-    db.data.skills.push(item)
-
-    await db.write()
-
-    res.status(201).json(item)
   }
 )
 
@@ -769,30 +910,56 @@ app.put(
   auth,
   async (req, res) => {
 
-    await db.read()
+    try {
 
-    const item =
-      db.data.skills.find(
-        x =>
-          x.id === req.params.id
+      await db.read()
+
+      const item =
+        db.data.skills.find(
+          x =>
+            x.id === req.params.id
+        )
+
+      if (!item) {
+
+        return res.status(404).json({
+          error:
+            'Skill not found'
+        })
+      }
+
+      const name =
+        cleanText(
+          req.body?.name,
+          100
+        )
+
+      if (!name) {
+
+        return res.status(400).json({
+          error:
+            'Skill name is required'
+        })
+      }
+
+      item.name = name
+
+      await db.write()
+
+      return res.json(item)
+
+    } catch (error) {
+
+      console.error(
+        'UPDATE SKILL ERROR:',
+        error
       )
 
-    if (!item) {
-
-      return res.status(404).json({
-        error: 'Skill not found'
+      return res.status(500).json({
+        error:
+          'Failed to update skill'
       })
     }
-
-    item.name =
-      cleanText(
-        req.body?.name,
-        100
-      )
-
-    await db.write()
-
-    res.json(item)
   }
 )
 
@@ -801,17 +968,46 @@ app.delete(
   auth,
   async (req, res) => {
 
-    await db.read()
+    try {
 
-    db.data.skills =
-      db.data.skills.filter(
-        x =>
-          x.id !== req.params.id
+      await db.read()
+
+      const exists =
+        db.data.skills.some(
+          x =>
+            x.id === req.params.id
+        )
+
+      if (!exists) {
+
+        return res.status(404).json({
+          error:
+            'Skill not found'
+        })
+      }
+
+      db.data.skills =
+        db.data.skills.filter(
+          x =>
+            x.id !== req.params.id
+        )
+
+      await db.write()
+
+      return res.status(204).end()
+
+    } catch (error) {
+
+      console.error(
+        'DELETE SKILL ERROR:',
+        error
       )
 
-    await db.write()
-
-    res.status(204).end()
+      return res.status(500).json({
+        error:
+          'Failed to delete skill'
+      })
+    }
   }
 )
 
@@ -824,17 +1020,43 @@ app.get(
   auth,
   async (_req, res) => {
 
-    await db.read()
+    try {
 
-    res.json(
-      [...db.data.projects].sort(
-        (a, b) =>
-          Number(a.number) -
-          Number(b.number)
+      await db.read()
+
+      const projects =
+        Array.isArray(
+          db.data.projects
+        )
+          ? db.data.projects
+          : []
+
+      return res.json(
+        [...projects].sort(
+          (a, b) =>
+            Number(a.number) -
+            Number(b.number)
+        )
       )
-    )
+
+    } catch (error) {
+
+      console.error(
+        'GET PROJECTS ERROR:',
+        error
+      )
+
+      return res.status(500).json({
+        error:
+          'Failed to load projects'
+      })
+    }
   }
 )
+
+// =====================================================
+// CREATE PROJECT
+// =====================================================
 
 app.post(
   '/api/projects',
@@ -843,6 +1065,16 @@ app.post(
   async (req, res) => {
 
     try {
+
+      await db.read()
+
+      if (
+        !Array.isArray(
+          db.data.projects
+        )
+      ) {
+        db.data.projects = []
+      }
 
       const item = {
 
@@ -880,8 +1112,7 @@ app.post(
             10
           ) ||
           String(
-            (db.data.projects?.length || 0) +
-            1
+            db.data.projects.length + 1
           )
       }
 
@@ -891,9 +1122,12 @@ app.post(
       ) {
 
         if (req.file) {
-          fs.unlinkSync(
-            req.file.path
-          )
+
+          try {
+            fs.unlinkSync(
+              req.file.path
+            )
+          } catch {}
         }
 
         return res.status(400).json({
@@ -902,13 +1136,13 @@ app.post(
         })
       }
 
-      await db.read()
-
       db.data.projects.push(item)
 
       await db.write()
 
-      return res.status(201).json(item)
+      return res.status(201).json(
+        item
+      )
 
     } catch (error) {
 
@@ -918,8 +1152,11 @@ app.post(
       )
 
       if (req.file) {
+
         try {
-          fs.unlinkSync(req.file.path)
+          fs.unlinkSync(
+            req.file.path
+          )
         } catch {}
       }
 
@@ -931,6 +1168,10 @@ app.post(
     }
   }
 )
+
+// =====================================================
+// UPDATE PROJECT
+// =====================================================
 
 app.put(
   '/api/projects/:id',
@@ -951,9 +1192,12 @@ app.put(
       if (!item) {
 
         if (req.file) {
-          fs.unlinkSync(
-            req.file.path
-          )
+
+          try {
+            fs.unlinkSync(
+              req.file.path
+            )
+          } catch {}
         }
 
         return res.status(404).json({
@@ -1020,6 +1264,15 @@ app.put(
         !item.image
       ) {
 
+        if (req.file) {
+
+          try {
+            fs.unlinkSync(
+              req.file.path
+            )
+          } catch {}
+        }
+
         return res.status(400).json({
           error:
             'Name and image are required'
@@ -1028,6 +1281,8 @@ app.put(
 
       await db.write()
 
+      // Delete previous uploaded image
+      // only when a new image was uploaded.
       if (
         req.file &&
         oldImage?.startsWith(
@@ -1038,14 +1293,20 @@ app.put(
         const oldPath =
           path.join(
             uploadsDir,
-            path.basename(oldImage)
+            path.basename(
+              oldImage
+            )
           )
 
         if (
           fs.existsSync(oldPath)
         ) {
 
-          fs.unlinkSync(oldPath)
+          try {
+            fs.unlinkSync(
+              oldPath
+            )
+          } catch {}
         }
       }
 
@@ -1058,6 +1319,15 @@ app.put(
         error
       )
 
+      if (req.file) {
+
+        try {
+          fs.unlinkSync(
+            req.file.path
+          )
+        } catch {}
+      }
+
       return res.status(500).json({
         error:
           error?.message ||
@@ -1067,58 +1337,79 @@ app.put(
   }
 )
 
+// =====================================================
+// DELETE PROJECT
+// =====================================================
+
 app.delete(
   '/api/projects/:id',
   auth,
   async (req, res) => {
 
-    await db.read()
+    try {
 
-    const item =
-      db.data.projects.find(
-        x =>
-          x.id === req.params.id
-      )
+      await db.read()
 
-    if (!item) {
-
-      return res.status(404).json({
-        error:
-          'Project not found'
-      })
-    }
-
-    db.data.projects =
-      db.data.projects.filter(
-        x =>
-          x.id !== req.params.id
-      )
-
-    await db.write()
-
-    if (
-      item.image?.startsWith(
-        '/uploads/'
-      )
-    ) {
-
-      const file =
-        path.join(
-          uploadsDir,
-          path.basename(
-            item.image
-          )
+      const item =
+        db.data.projects.find(
+          x =>
+            x.id === req.params.id
         )
 
+      if (!item) {
+
+        return res.status(404).json({
+          error:
+            'Project not found'
+        })
+      }
+
+      db.data.projects =
+        db.data.projects.filter(
+          x =>
+            x.id !== req.params.id
+        )
+
+      await db.write()
+
       if (
-        fs.existsSync(file)
+        item.image?.startsWith(
+          '/uploads/'
+        )
       ) {
 
-        fs.unlinkSync(file)
-      }
-    }
+        const file =
+          path.join(
+            uploadsDir,
+            path.basename(
+              item.image
+            )
+          )
 
-    res.status(204).end()
+        if (
+          fs.existsSync(file)
+        ) {
+
+          try {
+            fs.unlinkSync(file)
+          } catch {}
+        }
+      }
+
+      return res.status(204).end()
+
+    } catch (error) {
+
+      console.error(
+        'DELETE PROJECT ERROR:',
+        error
+      )
+
+      return res.status(500).json({
+        error:
+          'Failed to delete project'
+      })
+    }
   }
 )
 
@@ -1131,59 +1422,126 @@ app.get(
   auth,
   async (_req, res) => {
 
-    await db.read()
+    try {
 
-    res.json(
-      db.data.messages
-    )
+      await db.read()
+
+      return res.json(
+        db.data.messages || []
+      )
+
+    } catch (error) {
+
+      console.error(
+        'GET MESSAGES ERROR:',
+        error
+      )
+
+      return res.status(500).json({
+        error:
+          'Failed to load messages'
+      })
+    }
   }
 )
+
+// =====================================================
+// MARK MESSAGE AS READ
+// =====================================================
 
 app.put(
   '/api/messages/:id/read',
   auth,
   async (req, res) => {
 
-    await db.read()
+    try {
 
-    const item =
-      db.data.messages.find(
-        x =>
-          x.id === req.params.id
+      await db.read()
+
+      const item =
+        db.data.messages.find(
+          x =>
+            x.id === req.params.id
+        )
+
+      if (!item) {
+
+        return res.status(404).json({
+          error:
+            'Message not found'
+        })
+      }
+
+      item.read = true
+
+      await db.write()
+
+      return res.json(item)
+
+    } catch (error) {
+
+      console.error(
+        'READ MESSAGE ERROR:',
+        error
       )
 
-    if (!item) {
-
-      return res.status(404).json({
+      return res.status(500).json({
         error:
-          'Message not found'
+          'Failed to update message'
       })
     }
-
-    item.read = true
-
-    await db.write()
-
-    res.json(item)
   }
 )
+
+// =====================================================
+// DELETE MESSAGE
+// =====================================================
 
 app.delete(
   '/api/messages/:id',
   auth,
   async (req, res) => {
 
-    await db.read()
+    try {
 
-    db.data.messages =
-      db.data.messages.filter(
-        x =>
-          x.id !== req.params.id
+      await db.read()
+
+      const exists =
+        db.data.messages.some(
+          x =>
+            x.id === req.params.id
+        )
+
+      if (!exists) {
+
+        return res.status(404).json({
+          error:
+            'Message not found'
+        })
+      }
+
+      db.data.messages =
+        db.data.messages.filter(
+          x =>
+            x.id !== req.params.id
+        )
+
+      await db.write()
+
+      return res.status(204).end()
+
+    } catch (error) {
+
+      console.error(
+        'DELETE MESSAGE ERROR:',
+        error
       )
 
-    await db.write()
-
-    res.status(204).end()
+      return res.status(500).json({
+        error:
+          'Failed to delete message'
+      })
+    }
   }
 )
 
@@ -1195,30 +1553,42 @@ app.get(
   '/admin',
   (_req, res) => {
 
-    res.sendFile(
+    const adminIndex =
       path.join(
         adminDir,
         'index.html'
       )
+
+    if (
+      !fs.existsSync(adminIndex)
+    ) {
+
+      return res.status(404).send(
+        'Admin dashboard not found'
+      )
+    }
+
+    return res.sendFile(
+      adminIndex
     )
   }
 )
 
 // =====================================================
-// 404
+// API 404
 // =====================================================
 
 app.use(
   (_req, res) => {
 
-    res.status(404).json({
+    return res.status(404).json({
       error: 'Not found'
     })
   }
 )
 
 // =====================================================
-// ERROR HANDLER
+// GLOBAL ERROR HANDLER
 // =====================================================
 
 app.use(
@@ -1229,7 +1599,7 @@ app.use(
       error
     )
 
-    res.status(500).json({
+    return res.status(500).json({
       error:
         error?.message ||
         'Internal server error'
@@ -1238,11 +1608,12 @@ app.use(
 )
 
 // =====================================================
-// START
+// START SERVER
 // =====================================================
 
 app.listen(
   PORT,
+  '0.0.0.0',
   () => {
 
     console.log(
@@ -1250,11 +1621,15 @@ app.listen(
     )
 
     console.log(
+      `Health check: /api/health`
+    )
+
+    console.log(
       `Admin dashboard: /admin`
     )
 
     console.log(
-      `Health check: /api/health`
+      `JWT authentication enabled`
     )
   }
 )
