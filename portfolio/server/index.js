@@ -33,8 +33,41 @@ const PORT = Number(process.env.PORT || 4000)
 const ADMIN_PASSWORD = 'G6dnC'
 const JWT_SECRET = 'sinoo-sf-admin-secret-2026'
 
-const FRONTEND_ORIGIN =
-  process.env.FRONTEND_ORIGIN || '*'
+// =====================================================
+// CORS
+// =====================================================
+
+const allowedOrigins = [
+  'https://sinoosf.onrender.com',
+  'https://sinoosf-api.onrender.com',
+  'http://localhost:5173',
+  'http://localhost:3000'
+]
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+
+      // Allow requests without an Origin header
+      // such as direct API requests/server tools.
+      if (!origin) {
+        return callback(null, true)
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true)
+      }
+
+      console.log('CORS BLOCKED:', origin)
+
+      // Don't throw an error here.
+      // Simply reject the origin.
+      return callback(null, false)
+    },
+
+    credentials: true
+  })
+)
 
 // =====================================================
 // STORAGE
