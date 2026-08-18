@@ -14,5 +14,5 @@ services:
         sync: false
     disk:
       name: portfolio-data
-      mountPath: /opt/render/project/src/storage
+      mountPath: /opt/render/project/src/portfolio/storage
       sizeGB: 1
