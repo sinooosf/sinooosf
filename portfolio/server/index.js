@@ -90,6 +90,18 @@ async function initDatabase() {
     )
   `)
 
+  // Image bytes live in the database instead of on disk, since this
+  // service has no persistent disk and would lose files on every restart.
+  await pool.query(`
+    ALTER TABLE projects
+    ADD COLUMN IF NOT EXISTS image_data BYTEA
+  `)
+
+  await pool.query(`
+    ALTER TABLE projects
+    ADD COLUMN IF NOT EXISTS image_mimetype VARCHAR(50)
+  `)
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS messages (
       id VARCHAR(100) PRIMARY KEY,
@@ -317,34 +329,14 @@ app.use(
 // MULTER UPLOAD
 // =====================================================
 
-const uploadStorage = multer.diskStorage({
-
-  destination: (_req, _file, cb) => {
-    cb(null, uploadsDir)
-  },
-
-  filename: (_req, file, cb) => {
-
-    const ext = path
-      .extname(file.originalname)
-      .toLowerCase()
-
-    const base = path
-      .basename(file.originalname, ext)
-      .replace(/[^a-z0-9-_]/gi, '-')
-      .replace(/-+/g, '-')
-      .slice(0, 60)
-
-    cb(
-      null,
-      `${Date.now()}-${base || 'project'}${ext}`
-    )
-  }
-})
-
+// Render's free/starter web services have no persistent disk by default,
+// so anything saved to disk (uploadsDir) gets wiped on every restart or
+// redeploy. To survive restarts without paying for a disk, uploaded
+// images are kept in memory just long enough to save them into Postgres
+// (as bytes), instead of being written to a file.
 const upload = multer({
 
-  storage: uploadStorage,
+  storage: multer.memoryStorage(),
 
   limits: {
     fileSize: 8 * 1024 * 1024
@@ -594,6 +586,58 @@ app.get(
         error:
           'Failed to load public content'
       })
+    }
+  }
+)
+
+// =====================================================
+// PROJECT IMAGE (served from the database, not disk)
+// =====================================================
+
+app.get(
+  '/api/projects/:id/image',
+  async (req, res) => {
+
+    try {
+
+      const result =
+        await pool.query(`
+          SELECT image_data, image_mimetype
+          FROM projects
+          WHERE id = $1
+        `, [
+          req.params.id
+        ])
+
+      const row = result.rows[0]
+
+      if (!row || !row.image_data) {
+
+        return res.status(404).end()
+      }
+
+      res.set(
+        'Content-Type',
+        row.image_mimetype || 'image/jpeg'
+      )
+
+      res.set(
+        'Cache-Control',
+        'public, max-age=86400'
+      )
+
+      return res.send(
+        row.image_data
+      )
+
+    } catch (error) {
+
+      console.error(
+        'GET PROJECT IMAGE ERROR:',
+        error
+      )
+
+      return res.status(500).end()
     }
   }
 )
@@ -1208,27 +1252,13 @@ app.post(
           120
         )
 
-      const image =
-        req.file
-          ? `/uploads/${req.file.filename}`
-          : cleanText(
-              req.body?.image,
-              500
-            )
-
       const url =
         cleanText(
           req.body?.url,
           1000
         )
 
-      if (!name || !image) {
-
-        if (req.file) {
-          try {
-            fs.unlinkSync(req.file.path)
-          } catch {}
-        }
+      if (!name || !req.file) {
 
         return res.status(400).json({
           error:
@@ -1251,8 +1281,14 @@ app.post(
           countResult.rows[0].count + 1
         )
 
+      const projectId = id()
+
+      // The image itself lives in the database (image_data). This
+      // "image" field is just the URL the browser fetches it from.
+      const image = `/api/projects/${projectId}/image`
+
       const item = {
-        id: id(),
+        id: projectId,
         name,
         tag,
         image,
@@ -1268,17 +1304,21 @@ app.post(
             tag,
             image,
             url,
-            number
+            number,
+            image_data,
+            image_mimetype
           )
         VALUES
-          ($1, $2, $3, $4, $5, $6)
+          ($1, $2, $3, $4, $5, $6, $7, $8)
       `, [
         item.id,
         item.name,
         item.tag,
         item.image,
         item.url,
-        item.number
+        item.number,
+        req.file.buffer,
+        req.file.mimetype
       ])
 
       return res.status(201).json(
@@ -1291,12 +1331,6 @@ app.post(
         'CREATE PROJECT ERROR:',
         error
       )
-
-      if (req.file) {
-        try {
-          fs.unlinkSync(req.file.path)
-        } catch {}
-      }
 
       return res.status(500).json({
         error:
@@ -1336,12 +1370,6 @@ app.put(
 
       if (existing.rows.length === 0) {
 
-        if (req.file) {
-          try {
-            fs.unlinkSync(req.file.path)
-          } catch {}
-        }
-
         return res.status(404).json({
           error:
             'Project not found'
@@ -1350,9 +1378,6 @@ app.put(
 
       const current =
         existing.rows[0]
-
-      const oldImage =
-        current.image
 
       const name =
         req.body.name !== undefined
@@ -1376,16 +1401,10 @@ app.put(
 
       const image =
         req.file
-          ? `/uploads/${req.file.filename}`
+          ? `/api/projects/${req.params.id}/image`
           : current.image
 
       if (!name || !image) {
-
-        if (req.file) {
-          try {
-            fs.unlinkSync(req.file.path)
-          } catch {}
-        }
 
         return res.status(400).json({
           error:
@@ -1394,49 +1413,59 @@ app.put(
       }
 
       const result =
-        await pool.query(`
-          UPDATE projects
-          SET
-            name = $1,
-            tag = $2,
-            image = $3,
-            url = $4,
-            number = $5
-          WHERE id = $6
-          RETURNING
-            id,
-            name,
-            tag,
-            image,
-            url,
-            number
-        `, [
-          name,
-          tag,
-          image,
-          url,
-          number,
-          req.params.id
-        ])
-
-      // Delete old uploaded image
-      if (
-        req.file &&
-        oldImage?.startsWith('/uploads/')
-      ) {
-
-        const oldPath =
-          path.join(
-            uploadsDir,
-            path.basename(oldImage)
-          )
-
-        if (fs.existsSync(oldPath)) {
-          try {
-            fs.unlinkSync(oldPath)
-          } catch {}
-        }
-      }
+        req.file
+          ? await pool.query(`
+              UPDATE projects
+              SET
+                name = $1,
+                tag = $2,
+                image = $3,
+                url = $4,
+                number = $5,
+                image_data = $6,
+                image_mimetype = $7
+              WHERE id = $8
+              RETURNING
+                id,
+                name,
+                tag,
+                image,
+                url,
+                number
+            `, [
+              name,
+              tag,
+              image,
+              url,
+              number,
+              req.file.buffer,
+              req.file.mimetype,
+              req.params.id
+            ])
+          : await pool.query(`
+              UPDATE projects
+              SET
+                name = $1,
+                tag = $2,
+                image = $3,
+                url = $4,
+                number = $5
+              WHERE id = $6
+              RETURNING
+                id,
+                name,
+                tag,
+                image,
+                url,
+                number
+            `, [
+              name,
+              tag,
+              image,
+              url,
+              number,
+              req.params.id
+            ])
 
       return res.json(
         result.rows[0]
@@ -1448,12 +1477,6 @@ app.put(
         'UPDATE PROJECT ERROR:',
         error
       )
-
-      if (req.file) {
-        try {
-          fs.unlinkSync(req.file.path)
-        } catch {}
-      }
 
       return res.status(500).json({
         error:
@@ -1477,7 +1500,7 @@ app.delete(
 
       const existing =
         await pool.query(`
-          SELECT image
+          SELECT id
           FROM projects
           WHERE id = $1
         `, [
@@ -1492,32 +1515,12 @@ app.delete(
         })
       }
 
-      const image =
-        existing.rows[0].image
-
       await pool.query(`
         DELETE FROM projects
         WHERE id = $1
       `, [
         req.params.id
       ])
-
-      if (
-        image?.startsWith('/uploads/')
-      ) {
-
-        const file =
-          path.join(
-            uploadsDir,
-            path.basename(image)
-          )
-
-        if (fs.existsSync(file)) {
-          try {
-            fs.unlinkSync(file)
-          } catch {}
-        }
-      }
 
       return res.status(204).end()
 
