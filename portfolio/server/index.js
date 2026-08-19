@@ -98,7 +98,7 @@ async function initDatabase() {
       project TEXT NOT NULL,
       source VARCHAR(30) NOT NULL,
       read BOOLEAN NOT NULL DEFAULT FALSE,
-      "createdAt" TIMESTAMP NOT NULL
+      createdat TIMESTAMP NOT NULL
     )
   `)
 
@@ -663,7 +663,7 @@ app.post(
             project,
             source,
             read,
-            "createdAt"
+            createdat
           )
         VALUES
           ($1, $2, $3, $4, $5, $6, $7)
@@ -1555,9 +1555,9 @@ app.get(
             project,
             source,
             read,
-            "createdAt"
+            createdat
           FROM messages
-          ORDER BY "createdAt" DESC
+          ORDER BY createdat DESC
         `)
 
       return res.json(
@@ -1602,7 +1602,7 @@ app.put(
             project,
             source,
             read,
-            "createdAt"
+            createdat
         `, [
           req.params.id
         ])
