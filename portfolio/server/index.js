@@ -32,8 +32,9 @@ const adminDir = path.join(rootDir, 'admin')
 const PORT = Number(process.env.PORT || 4000)
 
 // No environment variables are required.
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
-const JWT_SECRET = process.env.JWT_SECRET
+const ADMIN_PASSWORD = 'G6dnC'
+const JWT_SECRET = 'sinoo-sf-admin-secret-2026'
+
 // =====================================================
 // CREATE DIRECTORIES
 // =====================================================
