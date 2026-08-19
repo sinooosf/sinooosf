@@ -6,7 +6,7 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
-import { JSONFilePreset } from 'lowdb/node'
+import pg from 'pg'
 
 dotenv.config()
 
@@ -21,7 +21,6 @@ const rootDir = path.resolve(__dirname, '..')
 
 const storageDir = path.join(rootDir, 'storage')
 const uploadsDir = path.join(storageDir, 'uploads')
-const dbPath = path.join(storageDir, 'db.json')
 const adminDir = path.join(rootDir, 'admin')
 
 // =====================================================
@@ -33,9 +32,8 @@ const adminDir = path.join(rootDir, 'admin')
 const PORT = Number(process.env.PORT || 4000)
 
 // No environment variables are required.
-const ADMIN_PASSWORD = 'G6dnC'
-const JWT_SECRET = 'sinoo-sf-admin-secret-2026'
-
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
+const JWT_SECRET = process.env.JWT_SECRET
 // =====================================================
 // CREATE DIRECTORIES
 // =====================================================
@@ -44,95 +42,197 @@ fs.mkdirSync(storageDir, { recursive: true })
 fs.mkdirSync(uploadsDir, { recursive: true })
 
 // =====================================================
-// DEFAULT DATABASE
+// POSTGRESQL DATABASE
 // =====================================================
 
-const defaultData = {
-  status: [
-    {
-      id: 'status-1',
-      label: 'Available for Freelance',
-      value: 'Available for Freelance',
-      active: true
+const { Pool } = pg
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+})
+
+async function initDatabase() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS status (
+      id VARCHAR(100) PRIMARY KEY,
+      label VARCHAR(120) NOT NULL,
+      value VARCHAR(120) NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT TRUE
+    )
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS skills (
+      id VARCHAR(100) PRIMARY KEY,
+      name VARCHAR(100) NOT NULL
+    )
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id VARCHAR(100) PRIMARY KEY,
+      name VARCHAR(150) NOT NULL,
+      tag VARCHAR(120) NOT NULL,
+      image VARCHAR(500) NOT NULL,
+      url VARCHAR(1000),
+      number VARCHAR(10) NOT NULL
+    )
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id VARCHAR(100) PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      number VARCHAR(80) NOT NULL,
+      project TEXT NOT NULL,
+      source VARCHAR(30) NOT NULL,
+      read BOOLEAN NOT NULL DEFAULT FALSE,
+      "createdAt" TIMESTAMP NOT NULL
+    )
+  `)
+
+  // ---------------------------------------------------
+  // INSERT DEFAULT STATUS IF TABLE IS EMPTY
+  // ---------------------------------------------------
+
+  const statusCount = await pool.query(`
+    SELECT COUNT(*)::int AS count
+    FROM status
+  `)
+
+  if (statusCount.rows[0].count === 0) {
+    await pool.query(`
+      INSERT INTO status
+        (id, label, value, active)
+      VALUES
+        ($1, $2, $3, $4)
+    `, [
+      'status-1',
+      'Available for Freelance',
+      'Available for Freelance',
+      true
+    ])
+  }
+
+  // ---------------------------------------------------
+  // INSERT DEFAULT SKILLS IF TABLE IS EMPTY
+  // ---------------------------------------------------
+
+  const skillsCount = await pool.query(`
+    SELECT COUNT(*)::int AS count
+    FROM skills
+  `)
+
+  if (skillsCount.rows[0].count === 0) {
+    const skills = [
+      'Web Development',
+      'UI/UX Development',
+      'Canva',
+      'Prompt Engineering',
+      'ReactJs / Tailwind',
+      'JavaScript',
+      'Git',
+      'SEO Basics'
+    ]
+
+    for (let i = 0; i < skills.length; i++) {
+      await pool.query(`
+        INSERT INTO skills
+          (id, name)
+        VALUES
+          ($1, $2)
+      `, [
+        `skill-${i + 1}`,
+        skills[i]
+      ])
     }
-  ],
+  }
 
-  skills: [
-    'Web Development',
-    'UI/UX Development',
-    'Canva',
-    'Prompt Engineering',
-    'ReactJs / Tailwind',
-    'JavaScript',
-    'Git',
-    'SEO Basics'
-  ].map((name, i) => ({
-    id: `skill-${i + 1}`,
-    name
-  })),
+  // ---------------------------------------------------
+  // INSERT DEFAULT PROJECTS IF TABLE IS EMPTY
+  // ---------------------------------------------------
 
-  projects: [
-    {
-      id: '01',
-      name: 'Veloce Bikes',
-      tag: 'E-Commerce Website',
-      image: '/uploads/firstpro.jpg',
-      url: '',
-      number: '01'
-    },
-    {
-      id: '02',
-      name: 'Woodcraft',
-      tag: 'Furniture Website',
-      image: '/uploads/seconde.jpg',
-      url: '',
-      number: '02'
-    },
-    {
-      id: '03',
-      name: 'Urbanic',
-      tag: 'Fashion Magazine',
-      image: '/uploads/third.jpg',
-      url: '',
-      number: '03'
-    },
-    {
-      id: '04',
-      name: 'NEON',
-      tag: 'Fashion Magazine',
-      image: '/uploads/forthproject.jpg',
-      url: '',
-      number: '04'
-    },
-    {
-      id: '05',
-      name: 'BOOKS',
-      tag: 'Fashion Magazine',
-      image: '/uploads/thirdproject.jpg',
-      url: '',
-      number: '05'
-    },
-    {
-      id: '06',
-      name: 'PORTFOLIO',
-      tag: 'Fashion Magazine',
-      image: '/uploads/secondeproject.jpg',
-      url: '',
-      number: '06'
+  const projectsCount = await pool.query(`
+    SELECT COUNT(*)::int AS count
+    FROM projects
+  `)
+
+  if (projectsCount.rows[0].count === 0) {
+    const projects = [
+      {
+        id: '01',
+        name: 'Veloce Bikes',
+        tag: 'E-Commerce Website',
+        image: '/uploads/firstpro.jpg',
+        url: '',
+        number: '01'
+      },
+      {
+        id: '02',
+        name: 'Woodcraft',
+        tag: 'Furniture Website',
+        image: '/uploads/seconde.jpg',
+        url: '',
+        number: '02'
+      },
+      {
+        id: '03',
+        name: 'Urbanic',
+        tag: 'Fashion Magazine',
+        image: '/uploads/third.jpg',
+        url: '',
+        number: '03'
+      },
+      {
+        id: '04',
+        name: 'NEON',
+        tag: 'Fashion Magazine',
+        image: '/uploads/forthproject.jpg',
+        url: '',
+        number: '04'
+      },
+      {
+        id: '05',
+        name: 'BOOKS',
+        tag: 'Fashion Magazine',
+        image: '/uploads/thirdproject.jpg',
+        url: '',
+        number: '05'
+      },
+      {
+        id: '06',
+        name: 'PORTFOLIO',
+        tag: 'Fashion Magazine',
+        image: '/uploads/secondeproject.jpg',
+        url: '',
+        number: '06'
+      }
+    ]
+
+    for (const project of projects) {
+      await pool.query(`
+        INSERT INTO projects
+          (id, name, tag, image, url, number)
+        VALUES
+          ($1, $2, $3, $4, $5, $6)
+      `, [
+        project.id,
+        project.name,
+        project.tag,
+        project.image,
+        project.url,
+        project.number
+      ])
     }
-  ],
+  }
 
-  messages: []
+  console.log('PostgreSQL database initialized')
 }
 
-// =====================================================
-// DATABASE
-// =====================================================
-
-const db = await JSONFilePreset(
-  dbPath,
-  defaultData
-)
+await initDatabase()
 
 // =====================================================
 // EXPRESS
@@ -432,22 +532,25 @@ app.get(
 
     try {
 
-      await db.read()
+      const [statusRows] = await pool.query(`
+        SELECT id, label, value, active
+        FROM status
+      `)
 
-      const status =
-        Array.isArray(db.data.status)
-          ? db.data.status
-          : []
+      const [skillsRows] = await pool.query(`
+        SELECT id, name
+        FROM skills
+      `)
 
-      const skills =
-        Array.isArray(db.data.skills)
-          ? db.data.skills
-          : []
+      const [projectsRows] = await pool.query(`
+        SELECT id, name, tag, image, url, number
+        FROM projects
+      `)
 
-      const projects =
-        Array.isArray(db.data.projects)
-          ? db.data.projects
-          : []
+      const status = statusRows
+      const skills = skillsRows
+      const projects = projectsRows
+
 
       return res.status(200).json({
 
@@ -511,8 +614,7 @@ app.post(
 
       const source =
         cleanText(
-          req.body?.source ||
-          'contact',
+          req.body?.source || 'contact',
           30
         )
 
@@ -528,50 +630,47 @@ app.post(
         })
       }
 
-      await db.read()
+      const messageId = id()
 
-      if (
-        !Array.isArray(
-          db.data.messages
-        )
-      ) {
-        db.data.messages = []
-      }
+      const messageSource =
+        source === 'footer'
+          ? 'footer'
+          : 'hero'
 
-      const message = {
+      const createdAt =
+        new Date()
 
-        id: id(),
-
+      await pool.query(`
+        INSERT INTO messages
+          (
+            id,
+            name,
+            number,
+            project,
+            source,
+            read,
+            "createdAt"
+          )
+        VALUES
+          ($1, $2, $3, $4, $5, $6, $7)
+      `, [
+        messageId,
         name,
-
         number,
-
         project,
-
-        source:
-          source === 'footer'
-            ? 'footer'
-            : 'hero',
-
-        read: false,
-
-        createdAt:
-          new Date().toISOString()
-      }
-
-      db.data.messages.unshift(
-        message
-      )
-
-      await db.write()
+        messageSource,
+        false,
+        createdAt
+      ])
 
       return res.status(201).json({
 
         ok: true,
 
         message: {
-          id: message.id
+          id: messageId
         }
+
       })
 
     } catch (error) {
@@ -589,6 +688,10 @@ app.post(
   }
 )
 
+
+// =====================================================
+// STATUS
+// =====================================================
 // =====================================================
 // STATUS
 // =====================================================
@@ -600,10 +703,18 @@ app.get(
 
     try {
 
-      await db.read()
+      const result = await pool.query(`
+        SELECT
+          id,
+          label,
+          value,
+          active
+        FROM status
+        ORDER BY id
+      `)
 
       return res.json(
-        db.data.status || []
+        result.rows
       )
 
     } catch (error) {
@@ -636,8 +747,7 @@ app.post(
 
       const value =
         cleanText(
-          req.body?.value ||
-          label,
+          req.body?.value || label,
           120
         )
 
@@ -652,16 +762,6 @@ app.post(
         })
       }
 
-      await db.read()
-
-      if (
-        !Array.isArray(
-          db.data.status
-        )
-      ) {
-        db.data.status = []
-      }
-
       const item = {
         id: id(),
         label,
@@ -669,9 +769,17 @@ app.post(
         active
       }
 
-      db.data.status.push(item)
-
-      await db.write()
+      await pool.query(`
+        INSERT INTO status
+          (id, label, value, active)
+        VALUES
+          ($1, $2, $3, $4)
+      `, [
+        item.id,
+        item.label,
+        item.value,
+        item.active
+      ])
 
       return res.status(201).json(
         item
@@ -699,15 +807,20 @@ app.put(
 
     try {
 
-      await db.read()
+      const existing =
+        await pool.query(`
+          SELECT
+            id,
+            label,
+            value,
+            active
+          FROM status
+          WHERE id = $1
+        `, [
+          req.params.id
+        ])
 
-      const item =
-        db.data.status.find(
-          x =>
-            x.id === req.params.id
-        )
-
-      if (!item) {
+      if (existing.rows.length === 0) {
 
         return res.status(404).json({
           error:
@@ -715,41 +828,55 @@ app.put(
         })
       }
 
-      if (
+      const current =
+        existing.rows[0]
+
+      const label =
         req.body.label !== undefined
-      ) {
+          ? cleanText(req.body.label, 120)
+          : current.label
 
-        item.label =
-          cleanText(
-            req.body.label,
-            120
-          )
-      }
-
-      if (
+      const value =
         req.body.value !== undefined
-      ) {
+          ? cleanText(req.body.value, 120)
+          : current.value
 
-        item.value =
-          cleanText(
-            req.body.value,
-            120
-          )
-      }
-
-      if (
+      const active =
         req.body.active !== undefined
-      ) {
+          ? Boolean(req.body.active)
+          : current.active
 
-        item.active =
-          Boolean(
-            req.body.active
-          )
+      if (!label) {
+
+        return res.status(400).json({
+          error:
+            'Label is required'
+        })
       }
 
-      await db.write()
+      const result =
+        await pool.query(`
+          UPDATE status
+          SET
+            label = $1,
+            value = $2,
+            active = $3
+          WHERE id = $4
+          RETURNING
+            id,
+            label,
+            value,
+            active
+        `, [
+          label,
+          value,
+          active,
+          req.params.id
+        ])
 
-      return res.json(item)
+      return res.json(
+        result.rows[0]
+      )
 
     } catch (error) {
 
@@ -773,29 +900,21 @@ app.delete(
 
     try {
 
-      await db.read()
+      const result =
+        await pool.query(`
+          DELETE FROM status
+          WHERE id = $1
+        `, [
+          req.params.id
+        ])
 
-      const exists =
-        db.data.status.some(
-          x =>
-            x.id === req.params.id
-        )
-
-      if (!exists) {
+      if (result.rowCount === 0) {
 
         return res.status(404).json({
           error:
             'Status not found'
         })
       }
-
-      db.data.status =
-        db.data.status.filter(
-          x =>
-            x.id !== req.params.id
-        )
-
-      await db.write()
 
       return res.status(204).end()
 
@@ -825,10 +944,17 @@ app.get(
 
     try {
 
-      await db.read()
+      const result =
+        await pool.query(`
+          SELECT
+            id,
+            name
+          FROM skills
+          ORDER BY id
+        `)
 
       return res.json(
-        db.data.skills || []
+        result.rows
       )
 
     } catch (error) {
@@ -867,24 +993,20 @@ app.post(
         })
       }
 
-      await db.read()
-
-      if (
-        !Array.isArray(
-          db.data.skills
-        )
-      ) {
-        db.data.skills = []
-      }
-
       const item = {
         id: id(),
         name
       }
 
-      db.data.skills.push(item)
-
-      await db.write()
+      await pool.query(`
+        INSERT INTO skills
+          (id, name)
+        VALUES
+          ($1, $2)
+      `, [
+        item.id,
+        item.name
+      ])
 
       return res.status(201).json(
         item
@@ -912,22 +1034,6 @@ app.put(
 
     try {
 
-      await db.read()
-
-      const item =
-        db.data.skills.find(
-          x =>
-            x.id === req.params.id
-        )
-
-      if (!item) {
-
-        return res.status(404).json({
-          error:
-            'Skill not found'
-        })
-      }
-
       const name =
         cleanText(
           req.body?.name,
@@ -942,11 +1048,28 @@ app.put(
         })
       }
 
-      item.name = name
+      const result =
+        await pool.query(`
+          UPDATE skills
+          SET name = $1
+          WHERE id = $2
+          RETURNING id, name
+        `, [
+          name,
+          req.params.id
+        ])
 
-      await db.write()
+      if (result.rows.length === 0) {
 
-      return res.json(item)
+        return res.status(404).json({
+          error:
+            'Skill not found'
+        })
+      }
+
+      return res.json(
+        result.rows[0]
+      )
 
     } catch (error) {
 
@@ -970,29 +1093,21 @@ app.delete(
 
     try {
 
-      await db.read()
+      const result =
+        await pool.query(`
+          DELETE FROM skills
+          WHERE id = $1
+        `, [
+          req.params.id
+        ])
 
-      const exists =
-        db.data.skills.some(
-          x =>
-            x.id === req.params.id
-        )
-
-      if (!exists) {
+      if (result.rowCount === 0) {
 
         return res.status(404).json({
           error:
             'Skill not found'
         })
       }
-
-      db.data.skills =
-        db.data.skills.filter(
-          x =>
-            x.id !== req.params.id
-        )
-
-      await db.write()
 
       return res.status(204).end()
 
@@ -1022,21 +1137,22 @@ app.get(
 
     try {
 
-      await db.read()
-
-      const projects =
-        Array.isArray(
-          db.data.projects
-        )
-          ? db.data.projects
-          : []
+      const result =
+        await pool.query(`
+          SELECT
+            id,
+            name,
+            tag,
+            image,
+            url,
+            number
+          FROM projects
+          ORDER BY
+            CAST(number AS INTEGER) ASC
+        `)
 
       return res.json(
-        [...projects].sort(
-          (a, b) =>
-            Number(a.number) -
-            Number(b.number)
-        )
+        result.rows
       )
 
     } catch (error) {
@@ -1066,67 +1182,37 @@ app.post(
 
     try {
 
-      await db.read()
-
-      if (
-        !Array.isArray(
-          db.data.projects
+      const name =
+        cleanText(
+          req.body?.name,
+          150
         )
-      ) {
-        db.data.projects = []
-      }
 
-      const item = {
+      const tag =
+        cleanText(
+          req.body?.tag,
+          120
+        )
 
-        id: id(),
+      const image =
+        req.file
+          ? `/uploads/${req.file.filename}`
+          : cleanText(
+              req.body?.image,
+              500
+            )
 
-        name:
-          cleanText(
-            req.body?.name,
-            150
-          ),
+      const url =
+        cleanText(
+          req.body?.url,
+          1000
+        )
 
-        tag:
-          cleanText(
-            req.body?.tag,
-            120
-          ),
-
-        image:
-          req.file
-            ? `/uploads/${req.file.filename}`
-            : cleanText(
-                req.body?.image,
-                500
-              ),
-
-        url:
-          cleanText(
-            req.body?.url,
-            1000
-          ),
-
-        number:
-          cleanText(
-            req.body?.number,
-            10
-          ) ||
-          String(
-            db.data.projects.length + 1
-          )
-      }
-
-      if (
-        !item.name ||
-        !item.image
-      ) {
+      if (!name || !image) {
 
         if (req.file) {
-
           try {
-            fs.unlinkSync(
-              req.file.path
-            )
+            fs.unlinkSync(req.file.path)
           } catch {}
         }
 
@@ -1136,9 +1222,50 @@ app.post(
         })
       }
 
-      db.data.projects.push(item)
+      const countResult =
+        await pool.query(`
+          SELECT COUNT(*)::int AS count
+          FROM projects
+        `)
 
-      await db.write()
+      const number =
+        cleanText(
+          req.body?.number,
+          10
+        ) ||
+        String(
+          countResult.rows[0].count + 1
+        )
+
+      const item = {
+        id: id(),
+        name,
+        tag,
+        image,
+        url,
+        number
+      }
+
+      await pool.query(`
+        INSERT INTO projects
+          (
+            id,
+            name,
+            tag,
+            image,
+            url,
+            number
+          )
+        VALUES
+          ($1, $2, $3, $4, $5, $6)
+      `, [
+        item.id,
+        item.name,
+        item.tag,
+        item.image,
+        item.url,
+        item.number
+      ])
 
       return res.status(201).json(
         item
@@ -1152,11 +1279,8 @@ app.post(
       )
 
       if (req.file) {
-
         try {
-          fs.unlinkSync(
-            req.file.path
-          )
+          fs.unlinkSync(req.file.path)
         } catch {}
       }
 
@@ -1181,22 +1305,26 @@ app.put(
 
     try {
 
-      await db.read()
+      const existing =
+        await pool.query(`
+          SELECT
+            id,
+            name,
+            tag,
+            image,
+            url,
+            number
+          FROM projects
+          WHERE id = $1
+        `, [
+          req.params.id
+        ])
 
-      const item =
-        db.data.projects.find(
-          x =>
-            x.id === req.params.id
-        )
-
-      if (!item) {
+      if (existing.rows.length === 0) {
 
         if (req.file) {
-
           try {
-            fs.unlinkSync(
-              req.file.path
-            )
+            fs.unlinkSync(req.file.path)
           } catch {}
         }
 
@@ -1206,70 +1334,42 @@ app.put(
         })
       }
 
+      const current =
+        existing.rows[0]
+
       const oldImage =
-        item.image
+        current.image
 
-      if (
+      const name =
         req.body.name !== undefined
-      ) {
+          ? cleanText(req.body.name, 150)
+          : current.name
 
-        item.name =
-          cleanText(
-            req.body.name,
-            150
-          )
-      }
-
-      if (
+      const tag =
         req.body.tag !== undefined
-      ) {
+          ? cleanText(req.body.tag, 120)
+          : current.tag
 
-        item.tag =
-          cleanText(
-            req.body.tag,
-            120
-          )
-      }
-
-      if (
+      const url =
         req.body.url !== undefined
-      ) {
+          ? cleanText(req.body.url, 1000)
+          : current.url
 
-        item.url =
-          cleanText(
-            req.body.url,
-            1000
-          )
-      }
-
-      if (
+      const number =
         req.body.number !== undefined
-      ) {
+          ? cleanText(req.body.number, 10)
+          : current.number
 
-        item.number =
-          cleanText(
-            req.body.number,
-            10
-          )
-      }
+      const image =
+        req.file
+          ? `/uploads/${req.file.filename}`
+          : current.image
 
-      if (req.file) {
-
-        item.image =
-          `/uploads/${req.file.filename}`
-      }
-
-      if (
-        !item.name ||
-        !item.image
-      ) {
+      if (!name || !image) {
 
         if (req.file) {
-
           try {
-            fs.unlinkSync(
-              req.file.path
-            )
+            fs.unlinkSync(req.file.path)
           } catch {}
         }
 
@@ -1279,38 +1379,54 @@ app.put(
         })
       }
 
-      await db.write()
+      const result =
+        await pool.query(`
+          UPDATE projects
+          SET
+            name = $1,
+            tag = $2,
+            image = $3,
+            url = $4,
+            number = $5
+          WHERE id = $6
+          RETURNING
+            id,
+            name,
+            tag,
+            image,
+            url,
+            number
+        `, [
+          name,
+          tag,
+          image,
+          url,
+          number,
+          req.params.id
+        ])
 
-      // Delete previous uploaded image
-      // only when a new image was uploaded.
+      // Delete old uploaded image
       if (
         req.file &&
-        oldImage?.startsWith(
-          '/uploads/'
-        )
+        oldImage?.startsWith('/uploads/')
       ) {
 
         const oldPath =
           path.join(
             uploadsDir,
-            path.basename(
-              oldImage
-            )
+            path.basename(oldImage)
           )
 
-        if (
-          fs.existsSync(oldPath)
-        ) {
-
+        if (fs.existsSync(oldPath)) {
           try {
-            fs.unlinkSync(
-              oldPath
-            )
+            fs.unlinkSync(oldPath)
           } catch {}
         }
       }
 
-      return res.json(item)
+      return res.json(
+        result.rows[0]
+      )
 
     } catch (error) {
 
@@ -1320,11 +1436,8 @@ app.put(
       )
 
       if (req.file) {
-
         try {
-          fs.unlinkSync(
-            req.file.path
-          )
+          fs.unlinkSync(req.file.path)
         } catch {}
       }
 
@@ -1348,15 +1461,16 @@ app.delete(
 
     try {
 
-      await db.read()
+      const existing =
+        await pool.query(`
+          SELECT image
+          FROM projects
+          WHERE id = $1
+        `, [
+          req.params.id
+        ])
 
-      const item =
-        db.data.projects.find(
-          x =>
-            x.id === req.params.id
-        )
-
-      if (!item) {
+      if (existing.rows.length === 0) {
 
         return res.status(404).json({
           error:
@@ -1364,32 +1478,27 @@ app.delete(
         })
       }
 
-      db.data.projects =
-        db.data.projects.filter(
-          x =>
-            x.id !== req.params.id
-        )
+      const image =
+        existing.rows[0].image
 
-      await db.write()
+      await pool.query(`
+        DELETE FROM projects
+        WHERE id = $1
+      `, [
+        req.params.id
+      ])
 
       if (
-        item.image?.startsWith(
-          '/uploads/'
-        )
+        image?.startsWith('/uploads/')
       ) {
 
         const file =
           path.join(
             uploadsDir,
-            path.basename(
-              item.image
-            )
+            path.basename(image)
           )
 
-        if (
-          fs.existsSync(file)
-        ) {
-
+        if (fs.existsSync(file)) {
           try {
             fs.unlinkSync(file)
           } catch {}
@@ -1412,7 +1521,6 @@ app.delete(
     }
   }
 )
-
 // =====================================================
 // ADMIN MESSAGES
 // =====================================================
@@ -1424,10 +1532,22 @@ app.get(
 
     try {
 
-      await db.read()
+      const result =
+        await pool.query(`
+          SELECT
+            id,
+            name,
+            number,
+            project,
+            source,
+            read,
+            "createdAt"
+          FROM messages
+          ORDER BY "createdAt" DESC
+        `)
 
       return res.json(
-        db.data.messages || []
+        result.rows
       )
 
     } catch (error) {
@@ -1456,15 +1576,24 @@ app.put(
 
     try {
 
-      await db.read()
+      const result =
+        await pool.query(`
+          UPDATE messages
+          SET read = TRUE
+          WHERE id = $1
+          RETURNING
+            id,
+            name,
+            number,
+            project,
+            source,
+            read,
+            "createdAt"
+        `, [
+          req.params.id
+        ])
 
-      const item =
-        db.data.messages.find(
-          x =>
-            x.id === req.params.id
-        )
-
-      if (!item) {
+      if (result.rows.length === 0) {
 
         return res.status(404).json({
           error:
@@ -1472,11 +1601,9 @@ app.put(
         })
       }
 
-      item.read = true
-
-      await db.write()
-
-      return res.json(item)
+      return res.json(
+        result.rows[0]
+      )
 
     } catch (error) {
 
@@ -1504,29 +1631,21 @@ app.delete(
 
     try {
 
-      await db.read()
+      const result =
+        await pool.query(`
+          DELETE FROM messages
+          WHERE id = $1
+        `, [
+          req.params.id
+        ])
 
-      const exists =
-        db.data.messages.some(
-          x =>
-            x.id === req.params.id
-        )
-
-      if (!exists) {
+      if (result.rowCount === 0) {
 
         return res.status(404).json({
           error:
             'Message not found'
         })
       }
-
-      db.data.messages =
-        db.data.messages.filter(
-          x =>
-            x.id !== req.params.id
-        )
-
-      await db.write()
 
       return res.status(204).end()
 
