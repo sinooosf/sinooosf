@@ -19,7 +19,10 @@ label{display:block;color:var(--muted);font-size:11px;font-weight:800;text-trans
 <body>
 <div id="app"></div><div id="toast"></div>
 <script>
-const API = 'https://sinooosf-api.onrender.com';
+// The admin page is served by this same backend (see app.use('/admin', ...)
+// in server/index.js), so it should always call itself, not a hardcoded
+// domain. This makes it work locally AND after deploys/renames.
+const API = '';
 let token = localStorage.getItem('sinoo_admin_token') || '';
 let state={status:[],skills:[],projects:[],messages:[]};
 const $=s=>document.querySelector(s);

@@ -52,7 +52,14 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false
-  }
+  },
+  connectionTimeoutMillis: 10000
+})
+
+// Without this, a lost/unreachable connection after startup would
+// crash the process with an unhandled error and no clear message.
+pool.on('error', (error) => {
+  console.error('UNEXPECTED DATABASE ERROR:', error)
 })
 
 async function initDatabase() {
@@ -233,7 +240,13 @@ async function initDatabase() {
   console.log('PostgreSQL database initialized')
 }
 
-await initDatabase()
+try {
+  await initDatabase()
+} catch (error) {
+  console.error('FAILED TO CONNECT TO DATABASE:', error.message)
+  console.error('Check that DATABASE_URL in your .env is correct and the database is still active (Render free databases expire after 30 days).')
+  process.exit(1)
+}
 
 // =====================================================
 // EXPRESS
@@ -533,24 +546,24 @@ app.get(
 
     try {
 
-      const [statusRows] = await pool.query(`
+      const statusResult = await pool.query(`
         SELECT id, label, value, active
         FROM status
       `)
 
-      const [skillsRows] = await pool.query(`
+      const skillsResult = await pool.query(`
         SELECT id, name
         FROM skills
       `)
 
-      const [projectsRows] = await pool.query(`
+      const projectsResult = await pool.query(`
         SELECT id, name, tag, image, url, number
         FROM projects
       `)
 
-      const status = statusRows
-      const skills = skillsRows
-      const projects = projectsRows
+      const status = statusResult.rows
+      const skills = skillsResult.rows
+      const projects = projectsResult.rows
 
 
       return res.status(200).json({
