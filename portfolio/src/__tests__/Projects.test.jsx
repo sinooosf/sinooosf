@@ -5,22 +5,22 @@ import Projects from '../components/Projects'
 afterEach(cleanup)
 
 describe('Projects', () => {
-  it('renders every project from the data list', () => {
+  it('renders every project from the data list', async () => {
     render(<Projects />)
-    expect(screen.getByText('Veloce Bikes')).toBeInTheDocument()
+    expect(await screen.findByText('Veloce Bikes')).toBeInTheDocument()
     expect(screen.getByText('Woodcraft')).toBeInTheDocument()
     expect(screen.getByText('Urbanic')).toBeInTheDocument()
   })
 
-  it('renders the View All Projects button', () => {
+  it('renders the See More button', async () => {
     render(<Projects />)
-    expect(screen.getByRole('button', { name: /view all projects/i })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /see more/i })).toBeInTheDocument()
   })
 
-  it('does not energize the button on desktop with exactly one row (3 projects)', () => {
+  it('energizes the See More button when there are more projects than fit in one row', async () => {
     window.innerWidth = 1280
     render(<Projects />)
-    const button = screen.getByRole('button', { name: /view all projects/i })
-    expect(button.className).not.toMatch(/animate-pulseGlow/)
+    const button = await screen.findByRole('button', { name: /see more/i })
+    expect(button.className).toMatch(/animate-pulseGlow/)
   })
 })

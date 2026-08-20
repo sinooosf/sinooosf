@@ -24,15 +24,26 @@ const DESKTOP_COLUMNS = 3
 export default function Projects() {
   const isMobile = useIsMobile()
   const [showAll, setShowAll] = useState(false)
-  const [projects, setProjects] = useState(fallbackProjects)
+  const [projects, setProjects] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let alive = true
     fetchPublicContent()
       .then((data) => {
-        if (alive && Array.isArray(data.projects)) setProjects(data.projects)
+        if (!alive) return
+        if (Array.isArray(data.projects) && data.projects.length > 0) {
+          setProjects(data.projects)
+        } else {
+          setProjects(fallbackProjects)
+        }
+        setLoading(false)
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!alive) return
+        setProjects(fallbackProjects)
+        setLoading(false)
+      })
     return () => { alive = false }
   }, [])
 
@@ -48,7 +59,20 @@ export default function Projects() {
         </Reveal>
 
         <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
-          {displayedProjects.map((project, i) => {
+          {loading
+            ? Array.from({ length: visibleProjectsCount }).map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="aspect-[4/3] rounded-xl bg-panel" />
+                  <div className="mt-4 flex items-start gap-3">
+                    <div className="h-4 w-5 shrink-0 rounded bg-panel" />
+                    <div className="flex-1 space-y-2 pt-0.5">
+                      <div className="h-3.5 w-2/3 rounded bg-panel" />
+                      <div className="h-2.5 w-1/3 rounded bg-panel" />
+                    </div>
+                  </div>
+                </div>
+              ))
+            : displayedProjects.map((project, i) => {
             const content = (
               <>
                 <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-panel">
@@ -85,7 +109,7 @@ export default function Projects() {
           })}
         </div>
 
-        {hasMoreProjects && (
+        {!loading && hasMoreProjects && (
           <div className="mt-10 flex justify-center">
             <button
               onClick={() => setShowAll(!showAll)}
